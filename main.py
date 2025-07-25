@@ -1,8 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-多機能ファイル一括リネームツール「連番スーパー」
-対話形式ですべての操作を実行できる統合版スクリプト
-"""
 import os
 import re
 import datetime
@@ -96,7 +92,7 @@ class RenbanSuper:
             try:
                 old_path.rename(new_path)
             except OSError as e:
-                print(f"  エラー: '{old_path.name}' のリネームに失敗。理由: {e}")
+                print(f"  エラー: '{old_path.name}' の改名に失敗。理由: {e}")
 
     # --- 各種情報取得メソッド ---
     def get_file_author(self, filepath):
@@ -121,7 +117,7 @@ class RenbanSuper:
             if filepath.suffix.lower() in ['.txt', '.md', '.py', '.html', '.css', '.js']:
                 content = filepath.read_text(encoding='utf-8', errors='ignore')[:10000]
                 if not content.strip(): return "EmptyFile"
-                prompt = f"以下のファイル内容を、ファイル名として使えるように3〜5単語程度の非常に短い英語で要約してください:\n\n---\n{content}\n---"
+                prompt = f"以下のファイル内容を、ファイル名として使えるように3〜5単語程度の非常に短い言葉で要約してください。ファイルの中身が日本語だったらファイル名も日本語にして下さい。ファイルの中身が英語だったらファイル名も英語にして下さい。また、すべての言語にこれをお願いします→コンピュータで処理できるような名前にしてください。:\n\n---\n{content}\n---"
                 response = self.ai_model.generate_content(prompt)
                 return response.text.strip().replace(" ", "_")
             else:
@@ -153,39 +149,39 @@ class RenbanSuper:
             return files
 
     # --- 各リネームモードの実行関数 ---
-    def run_simple(self, start=1, digits=3):
+    def run_simple(self, start=1, digits=3, **kwargs):
         files = self._get_files()
         for i, old_path in enumerate(files):
             new_name_base = f"{start + i:0{digits}d}"
             self._rename_file(old_path, new_name_base, old_path.suffix)
 
-    def run_date(self, date_type='modified', date_format='%Y-%m-%d_%H%M%S'):
+    def run_date(self, date_type='modified', date_format='%Y-%m-%d_%H%M%S', **kwargs):
         files = self._get_files()
         for old_path in files:
             ts = old_path.stat().st_ctime if date_type == 'created' else old_path.stat().st_mtime
             new_name_base = datetime.datetime.fromtimestamp(ts).strftime(date_format)
             self._rename_file(old_path, new_name_base, old_path.suffix)
 
-    def run_size(self):
+    def run_size(self, **kwargs):
         files = self._get_files()
         for old_path in files:
             new_name_base = f"size_{old_path.stat().st_size}B"
             self._rename_file(old_path, new_name_base, old_path.suffix)
 
-    def run_author(self):
+    def run_author(self, **kwargs):
         files = self._get_files()
         for old_path in files:
             author = self.get_file_author(old_path)
             new_name_base = f"{author}_{old_path.stem}"
             self._rename_file(old_path, new_name_base, old_path.suffix)
 
-    def run_ai_summary(self):
+    def run_ai_summary(self, **kwargs):
         files = self._get_files()
         for old_path in files:
             summary = self.get_ai_summary(old_path)
             self._rename_file(old_path, summary, old_path.suffix)
     
-    def run_ai_sort(self, start=1, digits=3):
+    def run_ai_sort(self, start=1, digits=3, **kwargs):
         files = self._get_files()
         sorted_files = self.sort_files_by_ai(files)
         for i, old_path in enumerate(sorted_files):
@@ -234,11 +230,11 @@ def get_date_options():
     prefix = input("接頭辞（ファイル名の前につける文字）を入力（不要ならEnter）: ")
     suffix = input("接尾辞（拡張子の前につける文字）を入力（不要ならEnter）: ")
     date_type = input("日付の種類を選択 ('modified' or 'created')（デフォルト: modified）: ") or "modified"
-    date_format = input("日付のフォーマットを入力 (デフォルト: %%Y-%%m-%%d_%%H%%M%%S): ") or "%Y-%m-%d_%H%M%S"
+    date_format = input("日付のフォーマットを入力 (デフォルト: %Y-%m-%d_%H%M%S): ") or "%Y-%m-%d_%H%M%S"
     return {"prefix": prefix, "suffix": suffix, "date_type": date_type, "date_format": date_format}
 
 
-# --- 3. すべてを動かすメイン関数 ---
+# --- 3. すべてを動かすメイン関数 (修正版) ---
 
 def main():
     """ユーザーとの対話を通じてリネーム処理を実行する"""
@@ -246,30 +242,40 @@ def main():
         target_path = get_folder_path()
         mode = get_rename_mode()
         
-        options = {}
+        # 全てのオプションを一旦この辞書に集める
+        all_options = {}
         if mode == 'simple':
-            options = get_simple_options()
+            all_options.update(get_simple_options())
         elif mode == 'date':
-            options = get_date_options()
+            all_options.update(get_date_options())
         else: # 他のモード用の共通オプション
-            options['prefix'] = input("接頭辞を入力（不要ならEnter）: ")
-            options['suffix'] = input("接尾辞を入力（不要ならEnter）: ")
+            all_options['prefix'] = input("接頭辞を入力（不要ならEnter）: ")
+            all_options['suffix'] = input("接尾辞を入力（不要ならEnter）: ")
             if mode == 'ai-sort':
-                 options['start'] = int(input("連番の開始番号を入力（デフォルト: 1）: ") or "1")
-                 options['digits'] = int(input("連番の桁数を入力（デフォルト: 3）: ") or "3")
+                 all_options['start'] = int(input("連番の開始番号を入力（デフォルト: 1）: ") or "1")
+                 all_options['digits'] = int(input("連番の桁数を入力（デフォルト: 3）: ") or "3")
+
+        # RenbanSuperの初期化に使う引数と、実行メソッドに使う引数を分離する
+        constructor_args = {
+            'prefix': all_options.pop('prefix', ''),
+            'suffix': all_options.pop('suffix', '')
+        }
+        # これで all_options には start, digits, date_format などメソッド固有の引数だけが残る
+        method_args = all_options
 
         # ドライランの実行
         print("\n--- ドライラン実行結果 ---")
-        renamer_dry = RenbanSuper(str(target_path), dry_run=True, **options)
-        getattr(renamer_dry, f"run_{mode}")(**options)
+        renamer_dry = RenbanSuper(str(target_path), dry_run=True, **constructor_args)
+        # getattrを使って、'run_simple' や 'run_ai_sort' などのメソッドを動的に呼び出す
+        getattr(renamer_dry, f"run_{mode}")(**method_args)
         print("--- ドライラン終了 ---")
         
         # 最終確認
-        confirm = input("\nこの変更を適用しますか？ (Yes / No) [Y/n]: ").lower().strip()
+        confirm = input("\nこの変更を適用しますか？[Y/n]: ").lower().strip()
         if confirm in ['y', 'yes', '']:
             print("\n--- 変更を適用します ---")
-            renamer_final = RenbanSuper(str(target_path), dry_run=False, **options)
-            getattr(renamer_final, f"run_{mode}")(**options)
+            renamer_final = RenbanSuper(str(target_path), dry_run=False, **constructor_args)
+            getattr(renamer_final, f"run_{mode}")(**method_args)
             print("--- 処理完了 ---")
         else:
             print("処理を中断しました。")
@@ -278,6 +284,7 @@ def main():
         print("\n処理が中断されました。")
     except Exception as e:
         print(f"\n予期せぬエラーが発生しました: {e}")
+
 
 if __name__ == '__main__':
     main()
